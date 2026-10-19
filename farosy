@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>روكت ليق مصغرة - أونلاين برمز</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 25px;
+            box-sizing: border-box;
+        }
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 32px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+        }
+        .scoreboard {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px 35px;
+            border-radius: 15px;
+            border: 3px solid #ffcc00;
+            font-size: 40px;
+            letter-spacing: 3px;
+        }
+        .controls-hint {
+            position: absolute;
+            bottom: 25px;
+            left: 25px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 18px;
+            border-radius: 12px;
+            font-size: 20px;
+            border: 2px solid #00ffff;
+            pointer-events: auto;
+        }
+        /* شاشة تسجيل الدخول برمز الغرفة */
+        #room-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            z-index: 10;
+        }
+        .modal-box {
+            background: #1e1e2f;
+            padding: 40px;
+            border-radius: 20px;
+            border: 4px solid #ffcc00;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(255, 204, 0, 0.5);
+            max-width: 450px;
+            width: 90%;
+        }
+        .modal-box h2 {
+            color: #fff;
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+        .modal-box input {
+            width: 80%;
+            padding: 15px;
+            font-size: 24px;
+            text-align: center;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+            background: #111;
+            color: #fff;
+            margin-bottom: 20px;
+            outline: none;
+        }
+        .modal-box button {
+            background: #ffcc00;
+            color: #111;
+            border: none;
+            padding: 15px 35px;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .modal-box button:hover {
+            background: #ffaa00;
+            transform: scale(1.05);
+        }
+    </style>
+    <!-- مكتبة ثري دي Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <!-- شاشة إدخال رمز الغرفة للعب مع الأصدقاء -->
+    <div id="room-modal">
+        <div class="modal-box">
+            <h2>🏎️ روكت ليق المصغرة</h2>
+            <p style="color: #bbb; font-size: 18px; margin-bottom: 15px;">ادخل رمز الغرفة للعب مع أصدقائك:</p>
+            <input type="text" id="room-input" placeholder="مثال: 1234" value="1234">
+            <br>
+            <button id="start-btn">بدء المباراة</button>
+        </div>
+    </div>
+
+    <!-- واجهة اللعبة أثناء اللعب -->
+    <div id="ui" style="display: none;">
+        <div class="hud-top">
+            <div id="room-tag" style="background: rgba(0,0,0,0.6); padding: 8px 20px; border-radius: 10px; font-size: 22px; border: 2px solid #00ffff;">الغرفة: -</div>
+            <div class="scoreboard" id="score">0 - 0</div>
+            <div id="timer" style="background: rgba(0,0,0,0.6); padding: 8px 20px; border-radius: 10px; font-size: 22px; border: 2px solid #ffcc00;">03:00</div>
+        </div>
+        <div class="controls-hint">
+            🎮 <b>التحكم:</b><br>
+            W / S أو السهم للأعلى والأسفل: تقدم وتراجع<br>
+            A / D أو السهم يمين ويسار: انعطاف<br>
+            زر المسافة (Space): توربو (Boost)
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer;
+        let car, botCar, ball;
+        let scoreRed = 0, scoreBlue = 0;
+        let keys = {};
+        let gameStarted = false;
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            const roomCode = document.getElementById('room-input').value.trim();
+            if(!roomCode) {
+                alert('الرجاء إدخال رمز غرفة صحيح!');
+                return;
+            }
+            document.getElementById('room-tag').innerText = "الغرفة: " + roomCode;
+            document.getElementById('room-modal').style.display = 'none';
+            document.getElementById('ui').style.display = 'flex';
+            initGame();
+        });
+
+        function initGame() {
+            // إعداد المشهد
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb); // سماوي مشرق (شمس)
+
+            // الكاميرا
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // الرندر
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // إضاءة الشمس الساطعة
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            sunLight.position.set(50, 100, 50);
+            sunLight.castShadow = true;
+            scene.add(sunLight);
+
+            // --- إنشاء الماب (الملعب) بشكل أكبر ---
+            const fieldWidth = 60;
+            const fieldLength = 100;
+            
+            const floorGeo = new THREE.PlaneGeometry(fieldWidth, fieldLength);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x228833, roughness: 0.8 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // حدود الملعب (جدران)
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x444444, transparent: true, opacity: 0.3 });
+            
+            // جدار يمين
+            const wallR = new THREE.Mesh(new THREE.BoxGeometry(2, 10, fieldLength), wallMat);
+            wallR.position.set(fieldWidth/2, 5, 0);
+            scene.add(wallR);
+
+            // جدار يسار
+            const wallL = new THREE.Mesh(new THREE.BoxGeometry(2, 10, fieldLength), wallMat);
+            wallL.position.set(-fieldWidth/2, 5, 0);
+            scene.add(wallL);
+
+            // --- المرميين الأكبر ---
+            const goalGeo = new THREE.BoxGeometry(20, 8, 4);
+            const goalMatRed = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+            const goalMatBlue = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true });
+
+            const goalNorth = new THREE.Mesh(goalGeo, goalMatRed);
+            goalNorth.position.set(0, 4, -fieldLength/2);
+            scene.add(goalNorth);
+
+            const goalSouth = new THREE.Mesh(goalGeo, goalMatBlue);
+            goalSouth.position.set(0, 4, fieldLength/2);
+            scene.add(goalSouth);
+
+            // --- السيارة (اللاعب) بحجم أكبر ---
+            const carGeo = new THREE.BoxGeometry(4, 2.5, 7);
+            const carMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.5 });
+            car = new THREE.Mesh(carGeo, carMat);
+            car.position.set(0, 1.25, 30);
+            car.castShadow = true;
+            scene.add(car);
+
+            car.speed = 0;
+            car.angle = 0;
+
+            // --- البوت (الخصم) بحجم أكبر وأوضح ---
+            const botGeo = new THREE.BoxGeometry(4, 2.5, 7);
+            const botMat = new THREE.MeshStandardMaterial({ color: 0xff3333, metalness: 0.5 });
+            botCar = new THREE.Mesh(botGeo, botMat);
+            botCar.position.set(0, 1.25, -30);
+            botCar.castShadow = true;
+            scene.add(botCar);
+            botCar.zDir = 1;
+
+            // --- الكرة بحجم أكبر ---
+            const ballGeo = new THREE.SphereGeometry(3, 32, 32);
+            const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+            ball = new THREE.Mesh(ballGeo, ballMat);
+            ball.position.set(0, 3, 0);
+            ball.castShadow = true;
+            scene.add(ball);
+            
+            ball.velocity = { x: 0, z: 0 };
+
+            // أحداث لوحة المفاتيح
+            window.addEventListener('keydown', (e) => keys[e.code] = true);
+            window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+            gameStarted = true;
+            animate();
+        }
+
+        // حركة اللعبة والمحاكاة الفيزيائية
+        function animate() {
+            if (!gameStarted) return;
+            requestAnimationFrame(animate);
+
+            // حركة سيارة اللاعب
+            let boost = keys['Space'] ? 1.8 : 1.0;
+            if (keys['KeyW'] || keys['ArrowUp']) {
+                car.speed = 0.5 * boost;
+            } else if (keys['KeyS'] || keys['ArrowDown']) {
+                car.speed = -0.3;
+            } else {
+                car.speed *= 0.92; // احتكاك
+            }
+
+            if (keys['KeyA'] || keys['ArrowLeft']) car.angle += 0.04;
+            if (keys['KeyD'] || keys['ArrowRight']) car.angle -= 0.04;
+
+            car.position.x += Math.sin(car.angle) * car.speed;
+            car.position.z += Math.cos(car.angle) * car.speed;
+
+            // حدود الملعب لسيارة اللاعب
+            car.position.x = Math.max(-28, Math.min(28, car.position.x));
+            car.position.z = Math.max(-48, Math.min(48, car.position.z));
+
+            // --- ذكاء بوت بسيط (يتحرك نحو الكرة) ---
+            if (botCar.position.z < ball.position.z) botCar.position.z += 0.18;
+            else botCar.position.z -= 0.18;
+            
+            if (botCar.position.x < ball.position.x) botCar.position.x += 0.15;
+            else botCar.position.x -= 0.15;
+
+            // حدود البوت
+            botCar.position.x = Math.max(-28, Math.min(28, botCar.position.x));
+            botCar.position.z = Math.max(-48, Math.min(48, botCar.position.z));
+
+            // --- حركة الكرة وارتدادها ---
+            ball.position.x += ball.velocity.x;
+            ball.position.z += ball.velocity.z;
+            ball.velocity.x *= 0.98; // تباطؤ تدريجي
+            ball.velocity.z *= 0.98;
+
+            // ارتداد من الجدران الجانبية
+            if (ball.position.x > 27 || ball.position.x < -27) {
+                ball.velocity.x *= -1;
+                ball.position.x = Math.max(-27, Math.min(27, ball.position.x));
+            }
+
+            // فحص الاصطدام بالسيارة (اللاعب)
+            let distToCar = car.position.distanceTo(ball.position);
+            if (distToCar < 5) {
+                let pushAngle = Math.atan2(ball.position.x - car.position.x, ball.position.z - car.position.z);
+                ball.velocity.x = Math.sin(pushAngle) * 0.8;
+                ball.velocity.z = Math.cos(pushAngle) * 0.8;
+            }
+
+            // فحص الاصطدام بالبوت
+            let distToBot = botCar.position.distanceTo(ball.position);
+            if (distToBot < 5) {
+                let pushAngleBot = Math.atan2(ball.position.x - botCar.position.x, ball.position.z - botCar.position.z);
+                ball.velocity.x = Math.sin(pushAngleBot) * 0.8;
+                ball.velocity.z = Math.cos(pushAngleBot) * 0.8;
+            }
+
+            // فحص الأهداف
+            if (ball.position.z < -49) {
+                if (ball.position.x > -10 && ball.position.x < 10) {
+                    scoreBlue++; // هدف للأزرق (أنت)
+                    resetBall();
+                } else {
+                    ball.velocity.z *= -1; // ارتطام بالقائم
+                }
+            }
+            if (ball.position.z > 49) {
+                if (ball.position.x > -10 && ball.position.x < 10) {
+                    scoreRed++; // هدف للأحمر (البوت)
+                    resetBall();
+                } else {
+                    ball.velocity.z *= -1; // ارتطام بالقائم
+                }
+            }
+
+            document.getElementById('score').innerText = `${scoreBlue} - ${scoreRed}`;
+
+            // الكاميرا تتبع السيارة بسلاسة وبحجم أكبر ومناسب
+            camera.position.x = car.position.x;
+            camera.position.y = car.position.y + 12;
+            camera.position.z = car.position.z + 20;
+            camera.lookAt(car.position.x, car.position.y, car.position.z - 5);
+
+            renderer.render(scene, camera);
+        }
+
+        function resetBall() {
+            ball.position.set(0, 3, 0);
+            ball.velocity.x = 0;
+            ball.velocity.z = 0;
+            car.position.set(0, 1.25, 30);
+            botCar.position.set(0, 1.25, -30);
+        }
+
+        window.addEventListener('resize', () => {
+            if (!gameStarted) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
